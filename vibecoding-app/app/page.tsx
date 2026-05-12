@@ -16,7 +16,7 @@ type Item = {
   title: string;
   priority: Priority;
   status: Status;
-  order: number;
+  sort_order: number;
   construction: boolean;
   jira?: string;
   date?: string;
@@ -62,20 +62,64 @@ function DraggableItem({ item }: { item: Item }) {
       {...attributes}
       className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-4 cursor-grab hover:shadow-md transition"
     >
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <div className="text-xs text-slate-400 mb-1">
-            #{item.order}
-          </div>
+      <div className="flex items-start justify-between mb-3 gap-2">
+  <div className="flex-1">
+    <div className="text-xs text-slate-400 mb-1">
+      #{item.sort_order}
+    </div>
 
-          <h3 className="font-semibold text-slate-800">
-            {item.title}
-          </h3>
-        </div>
+    <h3 className="font-semibold text-slate-800">
+      {item.title}
+    </h3>
+  </div>
 
-        <PriorityBadge priority={item.priority} />
-      </div>
+  <div className="flex items-center gap-2">
+    <PriorityBadge priority={item.priority} />
 
+    <button
+      onClick={async () => {
+        const newTitle = prompt(
+          "Edit item title",
+          item.title
+        );
+
+        if (!newTitle) return;
+
+        await supabase
+          .from("items")
+          .update({
+            title: newTitle,
+          })
+          .eq("id", item.id);
+
+        location.reload();
+      }}
+      className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded"
+    >
+      ✏️
+    </button>
+
+    <button
+      onClick={async () => {
+        const confirmed = confirm(
+          "Delete this item?"
+        );
+
+        if (!confirmed) return;
+
+        await supabase
+          .from("items")
+          .delete()
+          .eq("id", item.id);
+
+        location.reload();
+      }}
+      className="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded"
+    >
+      🗑
+    </button>
+  </div>
+</div>
       <div className="flex flex-col gap-2 text-sm">
         {item.construction && (
           <div className="inline-flex w-fit items-center rounded-full bg-blue-100 text-blue-700 px-2 py-1 text-xs font-medium">
@@ -144,7 +188,7 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [priority, setPriority] =
     useState<Priority>("medium");
-  const [order, setOrder] = useState(1);
+  const [sortOrder, setSortOrder] = useState(1);
   const [construction, setConstruction] =
     useState(false);
   const [jira, setJira] = useState("");
@@ -174,14 +218,14 @@ export default function Home() {
       .from("items")
       .insert([
         {
-          title: input,
-          priority,
-          status: "todo",
-          order,
-          construction,
-          jira,
-          date,
-        },
+  title: input,
+  priority,
+  status: "todo",
+  sort_order: sortOrder,
+  construction,
+  jira,
+  date,
+}
       ]);
 
     if (error) {
@@ -194,7 +238,7 @@ export default function Home() {
     setInput("");
     setJira("");
     setDate("");
-    setOrder(order + 1);
+    setSortOrder(sortOrder + 1);
     setConstruction(false);
     setPriority("medium");
   };
@@ -217,7 +261,7 @@ export default function Home() {
   const sorted = (status: Status) =>
     items
       .filter((i) => i.status === status)
-      .sort((a, b) => a.order - b.order);
+      .sort((a, b) => a.sort_order - b.sort_order);
 
   return (
     <div className="min-h-screen bg-[#F4F6FA]">
@@ -331,9 +375,9 @@ export default function Home() {
               <input
                 type="number"
                 className="border border-slate-300 rounded-xl p-3"
-                value={order}
+                value={sortOrder}
                 onChange={(e) =>
-                  setOrder(Number(e.target.value))
+                  setSortOrder(Number(e.target.value))
                 }
                 placeholder="Order"
               />
