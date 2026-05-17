@@ -28,10 +28,13 @@ function PriorityBadge({
   priority: Priority;
 }) {
   const styles = {
-    high: "bg-red-100 text-red-700",
-    medium: "bg-yellow-100 text-yellow-700",
-    low: "bg-slate-100 text-slate-700",
-  };
+  high:
+    "bg-red-50 text-red-700 border border-red-200",
+  medium:
+    "bg-amber-50 text-amber-700 border border-amber-200",
+  low:
+    "bg-slate-100 text-slate-700 border border-slate-200",
+};
 
   return (
     <span
@@ -68,7 +71,7 @@ function DraggableItem({
       style={style}
       {...listeners}
       {...attributes}
-      className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-4 cursor-grab hover:shadow-md transition"
+      className="bg-white rounded-3xl shadow-sm border border-slate-100 p-4 mb-4 cursor-grab hover:shadow-xl hover:-translate-y-1 transition duration-200"
     >
       <div className="flex items-start justify-between mb-3 gap-2">
         <div className="flex-1">
@@ -153,7 +156,7 @@ function Column({
   return (
     <div
       ref={setNodeRef}
-      className="bg-slate-100 rounded-2xl p-4 flex-1 min-h-[500px]"
+      className="bg-white/70 backdrop-blur rounded-3xl p-4 flex-1 min-h-[500px] border border-slate-200 shadow-sm"
     >
       <div className="flex items-center justify-between mb-4">
         <h2 className="font-bold text-slate-700">
@@ -315,8 +318,8 @@ export default function Home() {
       .sort((a, b) => a.sort_order - b.sort_order);
 
   return (
-    <div className="min-h-screen bg-[#F4F6FA]">
-      <header className="h-16 bg-[#002B5C] text-white flex items-center justify-between px-8 shadow">
+    <div className="min-h-screen bg-[#F7F8FA] text-slate-800">
+      <header className="h-16 bg-gradient-to-r from-[#8C1538] to-[#C41230] text-white flex items-center justify-between px-8 shadow-lg border-b border-white/10">
         <div>
           <h1 className="font-bold text-xl">
             Product Roadmap
@@ -333,18 +336,18 @@ export default function Home() {
       </header>
 
       <div className="flex">
-        <aside className="w-64 bg-white border-r border-slate-200 min-h-screen p-6">
+        <aside className="w-64 bg-white/95 backdrop-blur border-r border-slate-200 min-h-screen p-6 shadow-sm">
           <div className="mb-8">
             <div className="text-xs uppercase text-slate-400 mb-2">
               Navigation
             </div>
 
             <div className="flex flex-col gap-2">
-              <button className="bg-[#D31145] text-white rounded-xl px-4 py-3 text-left font-medium">
+              <button className="bg-gradient-to-r from-[#A71930] to-[#D31145] text-white rounded-2xl px-4 py-3 text-left font-semibold shadow hover:scale-[1.02] transition">
                 Roadmap Board
               </button>
 
-              <button className="hover:bg-slate-100 rounded-xl px-4 py-3 text-left text-slate-600">
+              <button className="hover:bg-[#FCE8ED] rounded-2xl px-4 py-3 text-left text-slate-600 transition">
                 Releases
               </button>
 
@@ -372,7 +375,7 @@ export default function Home() {
         </aside>
 
         <main className="flex-1 p-8">
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
+          <div className="bg-white rounded-3xl shadow-lg border border-slate-100 p-6 mb-8">
             <h2 className="text-lg font-bold text-slate-800 mb-4">
               {editingId
                 ? "Edit roadmap item"
@@ -381,7 +384,7 @@ export default function Home() {
 
             <div className="grid grid-cols-2 gap-4">
               <input
-                className="border border-slate-300 rounded-xl p-3"
+                className="border border-slate-200 rounded-2xl p-3 focus:outline-none focus:ring-2 focus:ring-[#C41230]/30 focus:border-[#C41230] transition"
                 value={input}
                 onChange={(e) =>
                   setInput(e.target.value)
@@ -449,7 +452,7 @@ export default function Home() {
             <div className="flex gap-3 mt-6">
               <button
                 onClick={saveItem}
-                className="bg-[#D31145] hover:opacity-90 text-white rounded-xl px-6 py-3 font-medium transition"
+                className="bg-gradient-to-r from-[#A71930] to-[#D31145] hover:scale-[1.02] text-white rounded-2xl px-6 py-3 font-semibold transition shadow-lg"
               >
                 {editingId
                   ? "Save changes"
@@ -459,7 +462,7 @@ export default function Home() {
               {editingId && (
                 <button
                   onClick={resetForm}
-                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl px-6 py-3 font-medium transition"
+                  className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-2xl px-6 py-3 font-medium transition"
                 >
                   Cancel
                 </button>
