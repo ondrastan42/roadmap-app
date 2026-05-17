@@ -42,7 +42,15 @@ function PriorityBadge({
   );
 }
 
-function DraggableItem({ item }: { item: Item }) {
+function DraggableItem({
+  item,
+  onEdit,
+  onDelete,
+}: {
+  item: Item;
+  onEdit: (item: Item) => void;
+  onDelete: (id: number) => void;
+}) {
   const { attributes, listeners, setNodeRef, transform } =
     useDraggable({
       id: item.id,
@@ -63,63 +71,41 @@ function DraggableItem({ item }: { item: Item }) {
       className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 mb-4 cursor-grab hover:shadow-md transition"
     >
       <div className="flex items-start justify-between mb-3 gap-2">
-  <div className="flex-1">
-    <div className="text-xs text-slate-400 mb-1">
-      #{item.sort_order}
-    </div>
+        <div className="flex-1">
+          <div className="text-xs text-slate-400 mb-1">
+            #{item.sort_order}
+          </div>
 
-    <h3 className="font-semibold text-slate-800">
-      {item.title}
-    </h3>
-  </div>
+          <h3 className="font-semibold text-slate-800">
+            {item.title}
+          </h3>
+        </div>
 
-  <div className="flex items-center gap-2">
-    <PriorityBadge priority={item.priority} />
+        <div className="flex items-center gap-2">
+          <PriorityBadge priority={item.priority} />
 
-    <button
-      onClick={async () => {
-        const newTitle = prompt(
-          "Edit item title",
-          item.title
-        );
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(item);
+            }}
+            className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded"
+          >
+            ✏️
+          </button>
 
-        if (!newTitle) return;
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(item.id);
+            }}
+            className="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded"
+          >
+            🗑
+          </button>
+        </div>
+      </div>
 
-        await supabase
-          .from("items")
-          .update({
-            title: newTitle,
-          })
-          .eq("id", item.id);
-
-        location.reload();
-      }}
-      className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded"
-    >
-      ✏️
-    </button>
-
-    <button
-      onClick={async () => {
-        const confirmed = confirm(
-          "Delete this item?"
-        );
-
-        if (!confirmed) return;
-
-        await supabase
-          .from("items")
-          .delete()
-          .eq("id", item.id);
-
-        location.reload();
-      }}
-      className="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded"
-    >
-      🗑
-    </button>
-  </div>
-</div>
       <div className="flex flex-col gap-2 text-sm">
         {item.construction && (
           <div className="inline-flex w-fit items-center rounded-full bg-blue-100 text-blue-700 px-2 py-1 text-xs font-medium">
@@ -151,10 +137,14 @@ function Column({
   id,
   title,
   items,
+  onEdit,
+  onDelete,
 }: {
   id: Status;
   title: string;
   items: Item[];
+  onEdit: (item: Item) => void;
+  onDelete: (id: number) => void;
 }) {
   const { setNodeRef } = useDroppable({
     id,
@@ -176,7 +166,12 @@ function Column({
       </div>
 
       {items.map((item) => (
-        <DraggableItem key={item.id} item={item} />
+        <DraggableItem
+          key={item.id}
+          item={item}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
       ))}
     </div>
   );
@@ -184,6 +179,9 @@ function Column({
 
 export default function Home() {
   const [items, setItems] = useState<Item[]>([]);
+
+  const [editingId, setEditingId] =
+    useState<number | null>(null);
 
   const [input, setInput] = useState("");
   const [priority, setPriority] =
@@ -211,21 +209,55 @@ export default function Home() {
     setItems(data || []);
   };
 
-  const addItem = async () => {
+  const resetForm = () => {
+    setEditingId(null);
+    setInput("");
+    setJira("");
+    setDate("");
+    setSortOrder(1);
+    setConstruction(false);
+    setPriority("medium");
+  };
+
+  const saveItem = async () => {
     if (!input) return;
+
+    if (editingId) {
+      const { error } = await supabase
+        .from("items")
+        .update({
+          title: input,
+          priority,
+          sort_order: sortOrder,
+          construction,
+          jira,
+          date,
+        })
+        .eq("id", editingId);
+
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      fetchItems();
+      resetForm();
+
+      return;
+    }
 
     const { error } = await supabase
       .from("items")
       .insert([
         {
-  title: input,
-  priority,
-  status: "todo",
-  sort_order: sortOrder,
-  construction,
-  jira,
-  date,
-}
+          title: input,
+          priority,
+          status: "todo",
+          sort_order: sortOrder,
+          construction,
+          jira,
+          date,
+        },
       ]);
 
     if (error) {
@@ -234,13 +266,32 @@ export default function Home() {
     }
 
     fetchItems();
+    resetForm();
+  };
 
-    setInput("");
-    setJira("");
-    setDate("");
-    setSortOrder(sortOrder + 1);
-    setConstruction(false);
-    setPriority("medium");
+  const handleEdit = (item: Item) => {
+    setEditingId(item.id);
+    setInput(item.title);
+    setPriority(item.priority);
+    setSortOrder(item.sort_order);
+    setConstruction(item.construction);
+    setJira(item.jira || "");
+    setDate(item.date || "");
+  };
+
+  const handleDelete = async (id: number) => {
+    const confirmed = confirm(
+      "Delete this item?"
+    );
+
+    if (!confirmed) return;
+
+    await supabase
+      .from("items")
+      .delete()
+      .eq("id", id);
+
+    fetchItems();
   };
 
   const handleDragEnd = async (event: any) => {
@@ -265,7 +316,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#F4F6FA]">
-      {/* TOPBAR */}
       <header className="h-16 bg-[#002B5C] text-white flex items-center justify-between px-8 shadow">
         <div>
           <h1 className="font-bold text-xl">
@@ -283,7 +333,6 @@ export default function Home() {
       </header>
 
       <div className="flex">
-        {/* SIDEBAR */}
         <aside className="w-64 bg-white border-r border-slate-200 min-h-screen p-6">
           <div className="mb-8">
             <div className="text-xs uppercase text-slate-400 mb-2">
@@ -322,12 +371,12 @@ export default function Home() {
           </div>
         </aside>
 
-        {/* CONTENT */}
         <main className="flex-1 p-8">
-          {/* FORM */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 mb-8">
             <h2 className="text-lg font-bold text-slate-800 mb-4">
-              Create roadmap item
+              {editingId
+                ? "Edit roadmap item"
+                : "Create roadmap item"}
             </h2>
 
             <div className="grid grid-cols-2 gap-4">
@@ -397,33 +446,51 @@ export default function Home() {
               </label>
             </div>
 
-            <button
-              onClick={addItem}
-              className="mt-6 bg-[#D31145] hover:opacity-90 text-white rounded-xl px-6 py-3 font-medium transition"
-            >
-              Add item
-            </button>
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={saveItem}
+                className="bg-[#D31145] hover:opacity-90 text-white rounded-xl px-6 py-3 font-medium transition"
+              >
+                {editingId
+                  ? "Save changes"
+                  : "Add item"}
+              </button>
+
+              {editingId && (
+                <button
+                  onClick={resetForm}
+                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl px-6 py-3 font-medium transition"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
 
-          {/* BOARD */}
           <DndContext onDragEnd={handleDragEnd}>
             <div className="grid grid-cols-3 gap-6">
               <Column
                 id="todo"
                 title="TODO"
                 items={sorted("todo")}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
               />
 
               <Column
                 id="doing"
                 title="IN PROGRESS"
                 items={sorted("doing")}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
               />
 
               <Column
                 id="done"
                 title="DONE"
                 items={sorted("done")}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
               />
             </div>
           </DndContext>
