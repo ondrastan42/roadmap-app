@@ -1,15 +1,27 @@
 "use client";
 
-import { supabase } from "../lib/supabase";
+import { BoardNotes } from "./components/BoardNotes";
+import { RoadmapBoard } from "./components/RoadmapBoard";
+import { ReleasesTimeline } from "./components/ReleasesTimeline";
+import { normalizeDate, type Horizon } from "../lib/roadmap";
+import { supabase, supabaseConfigured } from "../lib/supabase";
 import { useEffect, useState } from "react";
 import {
   DndContext,
+  type DragEndEvent,
   useDraggable,
   useDroppable,
 } from "@dnd-kit/core";
 
 type Priority = "low" | "medium" | "high";
 type Status = "todo" | "doing" | "done";
+type View = "backlog" | "releases" | "roadmap";
+
+const VIEW_TITLES: Record<View, string> = {
+  backlog: "Product Backlog",
+  releases: "Releases",
+  roadmap: "Roadmap",
+};
 
 type Item = {
   id: number;
@@ -20,27 +32,53 @@ type Item = {
   construction: boolean;
   jira?: string;
   date?: string;
+  Zadavatel?: string | null;
+  roadmap_horizon?: Horizon | null;
 };
 
-function PriorityBadge({
-  priority,
-}: {
-  priority: Priority;
+function formatSupabaseError(error: {
+  message?: string;
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
 }) {
-  const styles = {
-  high:
-    "bg-red-50 text-red-700 border border-red-200",
-  medium:
-    "bg-amber-50 text-amber-700 border border-amber-200",
-  low:
-    "bg-slate-100 text-slate-700 border border-slate-200",
+  return [error.message, error.code, error.details, error.hint]
+    .filter(Boolean)
+    .join(" — ");
+}
+
+function todayLocalIso() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function isTermExpired(date?: string) {
+  const d = normalizeDate(date);
+  return Boolean(d && d < todayLocalIso());
+}
+
+const PRIORITY_LABELS: Record<Priority, string> = {
+  low: "Nízká",
+  medium: "Střední",
+  high: "Vysoká",
 };
+
+function PriorityBadge({ priority }: { priority: Priority }) {
+  const styles = {
+    high: "bg-generali-danger-soft text-generali-red-dark border-generali-red/20",
+    medium:
+      "bg-generali-warning-soft text-[#775700] border-amber-200/60",
+    low: "bg-generali-surface-muted text-generali-ink-muted border-generali-border",
+  };
 
   return (
     <span
-      className={`text-xs px-2 py-1 rounded-full font-medium ${styles[priority]}`}
+      className={`text-xs px-2.5 py-0.5 rounded-full font-medium border ${styles[priority]}`}
     >
-      {priority.toUpperCase()}
+      {PRIORITY_LABELS[priority]}
     </span>
   );
 }
@@ -54,10 +92,9 @@ function DraggableItem({
   onEdit: (item: Item) => void;
   onDelete: (id: number) => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform } =
-    useDraggable({
-      id: item.id,
-    });
+  const { attributes, listeners, setNodeRef, transform } = useDraggable({
+    id: item.id,
+  });
 
   const style = {
     transform: transform
@@ -71,54 +108,72 @@ function DraggableItem({
       style={style}
       {...listeners}
       {...attributes}
-      className="bg-white rounded-3xl shadow-sm border border-slate-100 p-4 mb-4 cursor-grab hover:shadow-xl hover:-translate-y-1 transition duration-200"
+      className="generali-card group mb-3 cursor-grab p-4 transition hover:border-generali-red/25 hover:shadow-[0_8px_24px_rgba(32,37,43,0.08)] active:cursor-grabbing"
     >
       <div className="flex items-start justify-between mb-3 gap-2">
-        <div className="flex-1">
-          <div className="text-xs text-slate-400 mb-1">
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-generali-ink-subtle mb-1 font-medium">
             #{item.sort_order}
           </div>
-
-          <h3 className="font-semibold text-slate-800">
+          <h3 className="font-semibold text-generali-ink leading-snug">
             {item.title}
           </h3>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
           <PriorityBadge priority={item.priority} />
-
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onEdit(item);
             }}
-            className="text-xs bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded"
+            className="rounded-lg p-1.5 text-generali-ink-subtle opacity-0 transition group-hover:opacity-100 hover:bg-generali-surface-muted hover:text-generali-ink"
+            aria-label="Upravit"
           >
-            ✏️
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
           </button>
-
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onDelete(item.id);
             }}
-            className="text-xs bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded"
+            className="rounded-lg p-1.5 text-generali-ink-subtle opacity-0 transition group-hover:opacity-100 hover:bg-generali-danger-soft hover:text-generali-red"
+            aria-label="Smazat"
           >
-            🗑
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
           </button>
         </div>
       </div>
 
       <div className="flex flex-col gap-2 text-sm">
+        {item.Zadavatel && (
+          <div className="text-generali-ink-muted text-xs">
+            <span className="font-medium text-generali-ink-subtle">Zadavatel:</span>{" "}
+            {item.Zadavatel}
+          </div>
+        )}
+
         {item.construction && (
-          <div className="inline-flex w-fit items-center rounded-full bg-blue-100 text-blue-700 px-2 py-1 text-xs font-medium">
+          <div className="inline-flex w-fit items-center rounded-full bg-[#e8eef5] text-generali-navy px-2.5 py-1 text-xs font-medium">
             Předáno na konstrukci
           </div>
         )}
 
         {item.date && (
-          <div className="text-slate-500">
-            📅 {item.date}
+          <div className="text-generali-ink-muted text-xs">
+            {new Date(item.date).toLocaleDateString("cs-CZ", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            })}
           </div>
         )}
 
@@ -126,15 +181,23 @@ function DraggableItem({
           <a
             href={item.jira}
             target="_blank"
-            className="text-[#D31145] hover:underline"
+            rel="noopener noreferrer"
+            className="text-generali-red font-medium hover:text-generali-red-hover hover:underline text-xs"
+            onClick={(e) => e.stopPropagation()}
           >
-            Otevřít Jira →
+            Otevřít v Jira →
           </a>
         )}
       </div>
     </div>
   );
 }
+
+const COLUMN_ACCENTS: Record<Status, string> = {
+  todo: "from-generali-ink-subtle to-generali-border-strong",
+  doing: "from-generali-red-dark to-generali-red",
+  done: "from-generali-success to-[#55ab67]",
+};
 
 function Column({
   id,
@@ -149,67 +212,105 @@ function Column({
   onEdit: (item: Item) => void;
   onDelete: (id: number) => void;
 }) {
-  const { setNodeRef } = useDroppable({
-    id,
-  });
+  const { setNodeRef, isOver } = useDroppable({ id });
 
   return (
     <div
       ref={setNodeRef}
-      className="bg-white/70 backdrop-blur rounded-3xl p-4 flex-1 min-h-[500px] border border-slate-200 shadow-sm"
+      className={`flex-1 min-h-[520px] rounded-2xl border bg-generali-surface/80 backdrop-blur-sm transition ${
+        isOver
+          ? "border-generali-red/40 ring-2 ring-[var(--generali-focus-ring)]"
+          : "border-generali-border"
+      }`}
     >
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="font-bold text-slate-700">
-          {title}
-        </h2>
-
-        <div className="bg-white text-slate-500 text-sm rounded-full px-2 py-1">
-          {items.length}
+      <div
+        className={`h-1 rounded-t-2xl bg-gradient-to-r ${COLUMN_ACCENTS[id]}`}
+      />
+      <div className="p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-bold text-generali-ink-secondary tracking-tight">
+            {title}
+          </h2>
+          <span className="rounded-full bg-generali-surface-muted px-2.5 py-0.5 text-sm font-medium text-generali-ink-muted">
+            {items.length}
+          </span>
         </div>
-      </div>
 
-      {items.map((item) => (
-        <DraggableItem
-          key={item.id}
-          item={item}
-          onEdit={onEdit}
-          onDelete={onDelete}
-        />
-      ))}
+        {items.length === 0 ? (
+          <p className="text-sm text-generali-ink-subtle py-8 text-center">
+            Přetáhněte položku sem
+          </p>
+        ) : (
+          items.map((item) => (
+            <DraggableItem
+              key={item.id}
+              item={item}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          ))
+        )}
+      </div>
     </div>
   );
 }
 
 export default function Home() {
   const [items, setItems] = useState<Item[]>([]);
-
-  const [editingId, setEditingId] =
-    useState<number | null>(null);
-
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [input, setInput] = useState("");
-  const [priority, setPriority] =
-    useState<Priority>("medium");
+  const [priority, setPriority] = useState<Priority>("medium");
   const [sortOrder, setSortOrder] = useState(1);
-  const [construction, setConstruction] =
-    useState(false);
+  const [construction, setConstruction] = useState(false);
   const [jira, setJira] = useState("");
   const [date, setDate] = useState("");
+  const [zadavatel, setZadavatel] = useState("");
+  const [activeView, setActiveView] = useState<View>("backlog");
 
   useEffect(() => {
     fetchItems();
+    const interval = setInterval(fetchItems, 60_000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchItems = async () => {
-    const { data, error } = await supabase
-      .from("items")
-      .select("*");
+    if (!supabase) return;
+
+    const { data, error } = await supabase.from("items").select("*");
 
     if (error) {
-      console.error(error);
+      console.error(formatSupabaseError(error), error);
       return;
     }
 
-    setItems(data || []);
+    const loaded = data || [];
+    const expiredIds = loaded
+      .filter(
+        (i) => isTermExpired(i.date) && i.status !== "done"
+      )
+      .map((i) => i.id);
+
+    if (expiredIds.length > 0) {
+      const { error: updateError } = await supabase
+        .from("items")
+        .update({ status: "done" })
+        .in("id", expiredIds);
+
+      if (updateError) {
+        console.error(formatSupabaseError(updateError), updateError);
+        setItems(loaded);
+        return;
+      }
+
+      setItems(
+        loaded.map((i) =>
+          expiredIds.includes(i.id) ? { ...i, status: "done" as Status } : i
+        )
+      );
+      return;
+    }
+
+    setItems(loaded);
   };
 
   const resetForm = () => {
@@ -217,15 +318,21 @@ export default function Home() {
     setInput("");
     setJira("");
     setDate("");
+    setZadavatel("");
     setSortOrder(1);
     setConstruction(false);
     setPriority("medium");
   };
 
   const saveItem = async () => {
-    if (!input) return;
+    if (!input || !supabase) return;
 
     if (editingId) {
+      const previous = items.find((i) => i.id === editingId);
+      const previousDate = normalizeDate(previous?.date);
+      const newDate = date ? normalizeDate(date) : undefined;
+      const dateChanged = previousDate !== newDate;
+
       const { error } = await supabase
         .from("items")
         .update({
@@ -234,37 +341,39 @@ export default function Home() {
           sort_order: sortOrder,
           construction,
           jira,
-          date,
+          date: newDate || null,
+          Zadavatel: zadavatel || null,
+          ...(dateChanged ? { roadmap_horizon: null } : {}),
         })
         .eq("id", editingId);
 
       if (error) {
-        console.error(error);
+        console.error(formatSupabaseError(error), error);
+        alert(`Uložení se nezdařilo: ${formatSupabaseError(error)}`);
         return;
       }
 
       fetchItems();
       resetForm();
-
       return;
     }
 
-    const { error } = await supabase
-      .from("items")
-      .insert([
-        {
-          title: input,
-          priority,
-          status: "todo",
-          sort_order: sortOrder,
-          construction,
-          jira,
-          date,
-        },
-      ]);
+    const { error } = await supabase.from("items").insert([
+      {
+        title: input,
+        priority,
+        status: "todo",
+        sort_order: sortOrder,
+        construction,
+        jira,
+        date,
+        Zadavatel: zadavatel || null,
+      },
+    ]);
 
     if (error) {
-      console.error(error);
+      console.error(formatSupabaseError(error), error);
+      alert(`Uložení se nezdařilo: ${formatSupabaseError(error)}`);
       return;
     }
 
@@ -272,42 +381,83 @@ export default function Home() {
     resetForm();
   };
 
-  const handleEdit = (item: Item) => {
+  const handleEdit = (item: Item, options?: { switchToBacklog?: boolean }) => {
+    if (options?.switchToBacklog) {
+      setActiveView("backlog");
+    }
     setEditingId(item.id);
     setInput(item.title);
     setPriority(item.priority);
     setSortOrder(item.sort_order);
     setConstruction(item.construction);
     setJira(item.jira || "");
-    setDate(item.date || "");
+    setDate(normalizeDate(item.date) || "");
+    setZadavatel(item.Zadavatel || "");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleDelete = async (id: number) => {
-    const confirmed = confirm(
-      "Delete this item?"
-    );
+    const confirmed = confirm("Opravdu smazat tuto položku?");
+    if (!confirmed || !supabase) return;
 
-    if (!confirmed) return;
+    await supabase.from("items").delete().eq("id", id);
+    fetchItems();
+  };
 
-    await supabase
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || !supabase) return;
+
+    const { error } = await supabase
       .from("items")
-      .delete()
-      .eq("id", id);
+      .update({ status: over.id as Status })
+      .eq("id", active.id);
+
+    if (error) {
+      console.error(formatSupabaseError(error), error);
+      alert(`Přesun se nezdařil: ${formatSupabaseError(error)}`);
+      return;
+    }
 
     fetchItems();
   };
 
-  const handleDragEnd = async (event: any) => {
-    const { active, over } = event;
+  const handleResetHorizon = async (id: number) => {
+    if (!supabase) return;
 
-    if (!over) return;
-
-    await supabase
+    const { error } = await supabase
       .from("items")
-      .update({
-        status: over.id,
-      })
+      .update({ roadmap_horizon: null })
+      .eq("id", id);
+
+    if (error) {
+      console.error(formatSupabaseError(error), error);
+      alert(`Obnovení se nezdařilo: ${formatSupabaseError(error)}`);
+      return;
+    }
+
+    fetchItems();
+  };
+
+  const handleRoadmapDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || !supabase) return;
+
+    const horizon = over.id as Horizon;
+    if (horizon !== "now" && horizon !== "next" && horizon !== "later") {
+      return;
+    }
+
+    const { error } = await supabase
+      .from("items")
+      .update({ roadmap_horizon: horizon })
       .eq("id", active.id);
+
+    if (error) {
+      console.error(formatSupabaseError(error), error);
+      alert(`Uložení pozice v roadmapě se nezdařilo: ${formatSupabaseError(error)}`);
+      return;
+    }
 
     fetchItems();
   };
@@ -317,186 +467,286 @@ export default function Home() {
       .filter((i) => i.status === status)
       .sort((a, b) => a.sort_order - b.sort_order);
 
-  return (
-    <div className="min-h-screen bg-[#F7F8FA] text-slate-800">
-      <header className="h-16 bg-gradient-to-r from-[#8C1538] to-[#C41230] text-white flex items-center justify-between px-8 shadow-lg border-b border-white/10">
-        <div>
-          <h1 className="font-bold text-xl">
-            Product Roadmap
-          </h1>
+  const stats = {
+    total: items.length,
+    todo: sorted("todo").length,
+    doing: sorted("doing").length,
+    done: sorted("done").length,
+  };
 
-          <div className="text-xs text-slate-300">
-            PO Planning Dashboard
+  return (
+    <div className="min-h-screen bg-generali-surface-warm text-generali-ink">
+      <header className="sticky top-0 z-10 flex h-[4.25rem] items-center justify-between border-b border-white/10 bg-gradient-to-r from-generali-red-deep via-generali-red-dark to-generali-red px-6 shadow-[0_4px_20px_rgba(148,17,20,0.25)] lg:px-8">
+        <div className="flex items-center gap-4">
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-lg font-bold text-white backdrop-blur"
+            aria-hidden
+          >
+            G
+          </div>
+          <div>
+            <h1 className="text-lg font-bold tracking-tight text-white">
+              {VIEW_TITLES[activeView]}
+            </h1>
+            <p className="text-xs text-white/75">PO Planning Dashboard</p>
           </div>
         </div>
-
-        <div className="text-sm text-slate-300">
-          Vibecoding Edition 🚀
-        </div>
+        <span className="hidden text-sm text-white/70 sm:block">
+          Generali Česká pojišťovna
+        </span>
       </header>
 
-      <div className="flex">
-        <aside className="w-64 bg-white/95 backdrop-blur border-r border-slate-200 min-h-screen p-6 shadow-sm">
-          <div className="mb-8">
-            <div className="text-xs uppercase text-slate-400 mb-2">
-              Navigation
+      <div className="flex flex-col lg:flex-row">
+        <aside className="w-full border-b border-generali-border bg-generali-surface p-5 shadow-sm lg:w-64 lg:min-h-[calc(100vh-4.25rem)] lg:border-b-0 lg:border-r">
+          <nav className="mb-8">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-generali-ink-subtle">
+              Navigace
+            </p>
+            <div className="flex flex-col gap-1">
+              {(
+                [
+                  ["backlog", "Backlog"],
+                  ["releases", "Releases"],
+                  ["roadmap", "Roadmap"],
+                ] as const
+              ).map(([view, label]) => (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => {
+                    setActiveView(view);
+                    if (view !== "backlog") resetForm();
+                  }}
+                  className={
+                    activeView === view
+                      ? "generali-nav-active"
+                      : "generali-nav-item"
+                  }
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-
-            <div className="flex flex-col gap-2">
-              <button className="bg-gradient-to-r from-[#A71930] to-[#D31145] text-white rounded-2xl px-4 py-3 text-left font-semibold shadow hover:scale-[1.02] transition">
-                Roadmap Board
-              </button>
-
-              <button className="hover:bg-[#FCE8ED] rounded-2xl px-4 py-3 text-left text-slate-600 transition">
-                Releases
-              </button>
-
-              <button className="hover:bg-slate-100 rounded-xl px-4 py-3 text-left text-slate-600">
-                Backlog
-              </button>
-            </div>
-          </div>
+          </nav>
 
           <div>
-            <div className="text-xs uppercase text-slate-400 mb-2">
-              Summary
-            </div>
-
-            <div className="bg-slate-100 rounded-2xl p-4">
-              <div className="text-3xl font-bold text-slate-800">
-                {items.length}
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-generali-ink-subtle">
+              Přehled
+            </p>
+            <div className="generali-card overflow-hidden p-0">
+              <div className="border-b border-generali-border bg-generali-danger-soft px-4 py-3">
+                <div className="text-3xl font-bold text-generali-red">
+                  {stats.total}
+                </div>
+                <div className="text-sm text-generali-ink-muted">
+                  položek celkem
+                </div>
               </div>
-
-              <div className="text-sm text-slate-500">
-                Total items
+              <div className="grid grid-cols-3 gap-px bg-generali-border text-center text-xs">
+                <div className="bg-generali-surface px-2 py-3">
+                  <div className="font-bold text-generali-ink">{stats.todo}</div>
+                  <div className="text-generali-ink-subtle">Todo</div>
+                </div>
+                <div className="bg-generali-surface px-2 py-3">
+                  <div className="font-bold text-generali-red">{stats.doing}</div>
+                  <div className="text-generali-ink-subtle">Probíhá</div>
+                </div>
+                <div className="bg-generali-surface px-2 py-3">
+                  <div className="font-bold text-generali-success">{stats.done}</div>
+                  <div className="text-generali-ink-subtle">Hotovo</div>
+                </div>
               </div>
             </div>
           </div>
         </aside>
 
-        <main className="flex-1 p-8">
-          <div className="bg-white rounded-3xl shadow-lg border border-slate-100 p-6 mb-8">
-            <h2 className="text-lg font-bold text-slate-800 mb-4">
-              {editingId
-                ? "Edit roadmap item"
-                : "Create roadmap item"}
+        <main className="flex-1 p-5 lg:p-8">
+          {!supabaseConfigured && (
+            <div
+              role="alert"
+              className="mb-6 rounded-2xl border border-amber-300 bg-generali-warning-soft px-5 py-4 text-sm text-generali-ink-secondary"
+            >
+              <p className="font-semibold text-generali-ink">
+                Supabase není nakonfigurované
+              </p>
+              <p className="mt-1">
+                V kořeni projektu vytvořte soubor{" "}
+                <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">
+                  .env.local
+                </code>{" "}
+                podle{" "}
+                <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">
+                  .env.local.example
+                </code>
+                , pak restartujte{" "}
+                <code className="rounded bg-white/80 px-1.5 py-0.5 text-xs">
+                  npm run dev
+                </code>
+                .
+              </p>
+            </div>
+          )}
+
+          {activeView === "backlog" && (
+          <section className="generali-card mb-8 p-6">
+            <h2 className="mb-1 text-lg font-bold text-generali-ink">
+              {editingId ? "Upravit položku" : "Nová položka backlogu"}
             </h2>
+            <p className="mb-5 text-sm text-generali-ink-muted">
+              Vyplňte údaje a přidejte položku na board. Pole Termín určuje
+              pozici na časové ose v Releases.
+            </p>
 
-            <div className="grid grid-cols-2 gap-4">
-              <input
-                className="border border-slate-200 rounded-2xl p-3 focus:outline-none focus:ring-2 focus:ring-[#C41230]/30 focus:border-[#C41230] transition"
-                value={input}
-                onChange={(e) =>
-                  setInput(e.target.value)
-                }
-                placeholder="Feature name..."
-              />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5 sm:col-span-2">
+                <span className="text-sm font-medium text-generali-ink-secondary">
+                  Název funkce <span className="text-generali-red">*</span>
+                </span>
+                <input
+                  className="generali-input"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="např. Export do PDF"
+                />
+              </label>
 
-              <input
-                className="border border-slate-300 rounded-xl p-3"
-                value={jira}
-                onChange={(e) =>
-                  setJira(e.target.value)
-                }
-                placeholder="Jira URL..."
-              />
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-generali-ink-secondary">
+                  Zadavatel
+                </span>
+                <input
+                  className="generali-input"
+                  value={zadavatel}
+                  onChange={(e) => setZadavatel(e.target.value)}
+                  placeholder="např. Jan Novák"
+                />
+              </label>
 
-              <select
-                className="border border-slate-300 rounded-xl p-3"
-                value={priority}
-                onChange={(e) =>
-                  setPriority(
-                    e.target.value as Priority
-                  )
-                }
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-generali-ink-secondary">
+                  Odkaz na Jira
+                </span>
+                <input
+                  className="generali-input"
+                  value={jira}
+                  onChange={(e) => setJira(e.target.value)}
+                  placeholder="https://…"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-generali-ink-secondary">
+                  Priorita
+                </span>
+                <select
+                  className="generali-input"
+                  value={priority}
+                  onChange={(e) =>
+                    setPriority(e.target.value as Priority)
+                  }
+                >
+                  <option value="low">Nízká priorita</option>
+                  <option value="medium">Střední priorita</option>
+                  <option value="high">Vysoká priorita</option>
+                </select>
+              </label>
 
-              <input
-                type="date"
-                className="border border-slate-300 rounded-xl p-3"
-                value={date}
-                onChange={(e) =>
-                  setDate(e.target.value)
-                }
-              />
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-generali-ink-secondary">
+                  Termín release
+                </span>
+                <input
+                  type="date"
+                  className="generali-input"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                />
+              </label>
 
-              <input
-                type="number"
-                className="border border-slate-300 rounded-xl p-3"
-                value={sortOrder}
-                onChange={(e) =>
-                  setSortOrder(Number(e.target.value))
-                }
-                placeholder="Order"
-              />
-
-              <label className="flex items-center gap-2 text-slate-600">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-generali-ink-secondary">
+                  Pořadí
+                </span>
+                <input
+                  type="number"
+                  className="generali-input"
+                  value={sortOrder}
+                  onChange={(e) =>
+                    setSortOrder(Number(e.target.value))
+                  }
+                  placeholder="1"
+                  min={1}
+                />
+              </label>
+              <label className="flex items-center gap-3 rounded-xl border border-generali-border bg-generali-surface-muted/50 px-4 py-2.5 text-sm text-generali-ink-secondary cursor-pointer">
                 <input
                   type="checkbox"
                   checked={construction}
-                  onChange={(e) =>
-                    setConstruction(
-                      e.target.checked
-                    )
-                  }
+                  onChange={(e) => setConstruction(e.target.checked)}
+                  className="h-4 w-4 rounded border-generali-border-strong text-generali-red accent-generali-red"
                 />
-
                 Předáno na konstrukci
               </label>
             </div>
 
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={saveItem}
-                className="bg-gradient-to-r from-[#A71930] to-[#D31145] hover:scale-[1.02] text-white rounded-2xl px-6 py-3 font-semibold transition shadow-lg"
-              >
-                {editingId
-                  ? "Save changes"
-                  : "Add item"}
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button type="button" onClick={saveItem} className="generali-btn-primary">
+                {editingId ? "Uložit změny" : "Přidat položku"}
               </button>
-
               {editingId && (
-                <button
-                  onClick={resetForm}
-                  className="bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 rounded-2xl px-6 py-3 font-medium transition"
-                >
-                  Cancel
+                <button type="button" onClick={resetForm} className="generali-btn-secondary">
+                  Zrušit
                 </button>
               )}
             </div>
-          </div>
+          </section>
+          )}
 
-          <DndContext onDragEnd={handleDragEnd}>
-            <div className="grid grid-cols-3 gap-6">
-              <Column
-                id="todo"
-                title="TODO"
-                items={sorted("todo")}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-
-              <Column
-                id="doing"
-                title="IN PROGRESS"
-                items={sorted("doing")}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
-
-              <Column
-                id="done"
-                title="DONE"
-                items={sorted("done")}
-                onEdit={handleEdit}
-                onDelete={handleDelete}
-              />
+          {activeView === "backlog" && (
+            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_minmax(260px,320px)]">
+              <DndContext onDragEnd={handleDragEnd}>
+                <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+                  <Column
+                    id="todo"
+                    title="K řešení"
+                    items={sorted("todo")}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                  <Column
+                    id="doing"
+                    title="Probíhá"
+                    items={sorted("doing")}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                  <Column
+                    id="done"
+                    title="Hotovo"
+                    items={sorted("done")}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                  />
+                </div>
+              </DndContext>
+              <BoardNotes />
             </div>
-          </DndContext>
+          )}
+
+          {activeView === "releases" && (
+            <ReleasesTimeline
+              items={items}
+              onEdit={(item) => handleEdit(item, { switchToBacklog: true })}
+            />
+          )}
+
+          {activeView === "roadmap" && (
+            <RoadmapBoard
+              items={items}
+              onEdit={(item) => handleEdit(item, { switchToBacklog: true })}
+              onDragEnd={handleRoadmapDragEnd}
+              onResetHorizon={handleResetHorizon}
+            />
+          )}
         </main>
       </div>
     </div>

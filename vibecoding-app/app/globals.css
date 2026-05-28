@@ -1,26 +1,88 @@
 @import "tailwindcss";
 
+/* Paleta z generaliceska.cz (cp2020 theme) */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --generali-red: #c21b17;
+  --generali-red-hover: #aa1b17;
+  --generali-red-dark: #8e1230;
+  --generali-red-deep: #941114;
+  --generali-coral: #ff545c;
+  --generali-navy: #001431;
+  --generali-ink: #20252b;
+  --generali-ink-secondary: #282e38;
+  --generali-ink-muted: #535f74;
+  --generali-ink-subtle: #687791;
+  --generali-surface: #ffffff;
+  --generali-surface-warm: #f8f4f3;
+  --generali-surface-muted: #f5f5f6;
+  --generali-border: #e9eaeb;
+  --generali-border-strong: #d4d5d7;
+  --generali-success: #01b561;
+  --generali-success-soft: #e8f8ef;
+  --generali-warning-soft: #fff6d3;
+  --generali-danger-soft: #fff0ee;
+  --generali-focus-ring: rgba(194, 27, 23, 0.22);
+
+  --background: var(--generali-surface-warm);
+  --foreground: var(--generali-ink);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-generali-red: var(--generali-red);
+  --color-generali-red-hover: var(--generali-red-hover);
+  --color-generali-red-dark: var(--generali-red-dark);
+  --color-generali-red-deep: var(--generali-red-deep);
+  --color-generali-coral: var(--generali-coral);
+  --color-generali-navy: var(--generali-navy);
+  --color-generali-ink: var(--generali-ink);
+  --color-generali-ink-secondary: var(--generali-ink-secondary);
+  --color-generali-ink-muted: var(--generali-ink-muted);
+  --color-generali-ink-subtle: var(--generali-ink-subtle);
+  --color-generali-surface: var(--generali-surface);
+  --color-generali-surface-warm: var(--generali-surface-warm);
+  --color-generali-surface-muted: var(--generali-surface-muted);
+  --color-generali-border: var(--generali-border);
+  --color-generali-border-strong: var(--generali-border-strong);
+  --color-generali-success: var(--generali-success);
+  --color-generali-success-soft: var(--generali-success-soft);
+  --color-generali-warning-soft: var(--generali-warning-soft);
+  --color-generali-danger-soft: var(--generali-danger-soft);
+  --font-sans: var(--font-roboto);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-roboto), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Sdílené komponenty */
+.generali-input {
+  @apply w-full rounded-xl border border-generali-border bg-generali-surface px-4 py-2.5 text-generali-ink placeholder:text-generali-ink-subtle transition;
+  @apply focus:border-generali-red focus:outline-none focus:ring-[3px] focus:ring-[var(--generali-focus-ring)];
+}
+
+.generali-btn-primary {
+  @apply inline-flex items-center justify-center rounded-xl bg-generali-red px-6 py-2.5 font-semibold text-white shadow-sm transition;
+  @apply hover:bg-generali-red-hover active:scale-[0.98];
+}
+
+.generali-btn-secondary {
+  @apply inline-flex items-center justify-center rounded-xl border border-generali-border bg-generali-surface px-6 py-2.5 font-medium text-generali-ink-secondary transition;
+  @apply hover:bg-generali-surface-muted;
+}
+
+.generali-card {
+  @apply rounded-2xl border border-generali-border bg-generali-surface shadow-[0_1px_3px_rgba(32,37,43,0.06)];
+}
+
+.generali-nav-active {
+  @apply rounded-xl bg-generali-red px-4 py-3 text-left font-semibold text-white shadow-sm;
+}
+
+.generali-nav-item {
+  @apply rounded-xl px-4 py-3 text-left text-generali-ink-muted transition hover:bg-generali-danger-soft hover:text-generali-red-dark;
 }
